@@ -79,7 +79,7 @@ class Modelado(Portafolio):
         return final_df    
         
         
-    def apply_model(self,df,max_iters,use_file_criteria=False):
+    def apply_model(self,df,max_iters,use_file_criteria=False,data_type="full"):
         if use_file_criteria:
             new_df = pd.read_csv("modelos_info_criteria.csv")
             if list(new_df.columns)[0] == "Unnamed: 0":
@@ -99,7 +99,7 @@ class Modelado(Portafolio):
             print("termine HQIC")
 
             # Escritura de archivo
-            new_df.to_csv("modelos_info_criteria.csv",index=False)
+            new_df.to_csv(f"{data_type}_modelos_info_criteria.csv",index=False)
 
         return new_df
     
