@@ -109,4 +109,4 @@ class Portafolio:
         else:
             self.create_df_tickers(list_tickers=self.tickers_info_full)
         
-        self.permutations_tickers(self.tickers_info_df["column_id"],repeat=2)
+        self.permutations_tickers(self.tickers_info_df["column_id"],repeat=2)        

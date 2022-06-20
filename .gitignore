@@ -132,3 +132,4 @@ dmypy.json
 /acciones
 
 *.csv
+*.pkl
