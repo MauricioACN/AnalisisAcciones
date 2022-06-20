@@ -40,6 +40,9 @@ class Submitfull(Modelado):
 
         self.test_results = test_results
 
+        self.filter_test_results = self.filter_data(self.test_results)
+        self.filter_test_results.to_csv(f"Resultados_finales_datos_{self.data_type}.csv",index=False)
+
         # Archivo de tickers definitivo
         id_modelos = pd.DataFrame(self.ids_filters,columns= ["var1","var2"])
         id_modelos.to_csv("../Datos/Ids_modelos.csv",index=False)
@@ -50,13 +53,22 @@ class Submitfull(Modelado):
         
         if type=="modelo":
             ruta = "Modelos"
+            salida = self.modelos_lista
 
         elif type=="resultados":
             ruta = "Resultados"
+            salida = self.lista_results
         
         for modelo in np.arange(0,len(self.modelos_lista)):
-            with open(f'../{ruta}/{self.data_type}_model_{modelo}.pkl',"wb") as f:
-                modelo = self.modelos_lista[modelo]                    
+            
+            if type=="modelo":
+                path = f'../{ruta}/{self.data_type}_model_{modelo}.pkl'
+            
+            else:
+                path = f'../{ruta}/{self.data_type}_result_{modelo}.pkl'
+
+            with open(path,"wb") as f:
+                modelo = salida[modelo]                    
                 pickle.dump(modelo,f)
     
     def lectura_info(self, type="modelo"):
@@ -71,7 +83,14 @@ class Submitfull(Modelado):
 
         modelos_full = {}
         for modelo in np.arange(0,ids_modelos.shape[0]):
-            with open(f'../{ruta}/{self.data_type}_model_{modelo}.pkl','rb') as f:
+
+            if type=="modelo":
+                path = f'../{ruta}/{self.data_type}_model_{modelo}.pkl'
+            
+            else:
+                path = f'../{ruta}/{self.data_type}_result_{modelo}.pkl'
+
+            with open(path,'rb') as f:
                 modelos_full[modelo] = pickle.load(f)
         
         return modelos_full

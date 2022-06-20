@@ -47,24 +47,58 @@ class Modelado(Portafolio):
         # return (list_AIC,list_BIC,list_FPE,list_HQIC)
         return models_results_by_lags
 
-    def durbin_watson_df(self):
-        out = durbin_watson(self.results.resid)
-        df_out = pd.DataFrame(out, columns={"result"})
-        df_out["no_correlation"] = df_out["result"].apply(lambda x: x>1.85 and x<2.15)
-        return df_out
+    def durbin_watson_test(self, results):
+        out = durbin_watson(results)
+        var_1 = out[0]
+        var_2 = out[1]
 
-    # def grangers_causation_matrix(self, data):    
-    #     salida = pd.DataFrame(Portafolio.ids_filters, columns = ["var1","var2"])
-    #     salida["p-value"] = np.nan
+        no_correlation_var1 = (var_1 > 1.85) & (var_1 < 2.15)
+        no_correlation_var2 = (var_2 > 1.85) & (var_2 < 2.15)
 
-    #     for id,pair in enumerate(Portafolio.ids_filters):
-    #         test_result = grangercausalitytests(data[list(pair)], maxlag=[self.maxlag], verbose=False) # remover parentesis en maxlag
-    #         # p_values = [round(test_result[i+1][0][test][1],4) for i in range(maxlag)]     
-    #         p_values = round(test_result[self.maxlag][0][self.test][1],4)
-    #         # min_p_value = np.min(p_values)
-    #         # salida.iloc[id,2] = min_p_value
-    #         salida.iloc[id,2] = p_values
-    #     return salida
+        return (var_1, var_2, no_correlation_var1, no_correlation_var2)
+
+    def apply_durbin_watson(self):
+    
+        list_results = []
+        for id in np.arange(0,len(self.lista_results)):
+            try:
+                model_result = self.lista_results[id]
+                test = self.durbin_watson_test(model_result.resid)
+            except:
+                test = ("Error",)*4
+            
+            list_results.append(test)
+
+        results = pd.DataFrame(list_results,columns=["p_value_no_correlation_var_1", "p_value_no_correlation_var_2", "no_correlation_var1", "no_correlation_var2"])
+
+        return results
+
+    def cointegration_test(self,y0,y1,maxlags = 1, trend="c"):
+
+        out = coint(y0, y1, maxlag = maxlags, trend = trend)
+        pvalue_coint = out[1]
+        cointegration = pvalue_coint<0.05
+
+        return pvalue_coint,cointegration
+
+    def cointegration_johansen_test(self,df,det_order,k_ar_diff):
+
+        test = coint_johansen(df,det_order,k_ar_diff)
+
+        return test
+
+    def apply_cointegrations_test(self,var1,var2,maxlags):
+        
+        y0 = self.df_transform[var1]
+        y1 = self.df_transform[var2]
+
+        try:
+            test = self.cointegration_test(y0,y1,maxlags = maxlags)
+            
+        except:
+            test = ("Error",)*2
+        
+        return test
 
     def iter_var(self,criterio,max_lag,models_results_by_lags):
         salida = [models_results_by_lags[id][criterio] for id in np.arange(1,max_lag)]
@@ -72,12 +106,16 @@ class Modelado(Portafolio):
         print(f"{criterio}: ",max_lag)
         return max_lag
     
-    def clean_output_model(self,df):
-        final_df = df.copy()
-        final_df["pass_test"] = final_df["p-value"]<0.05
-        final_df = final_df[final_df["pass_test"]==True]
-        return final_df    
-        
+    def filter_data(self,df):
+
+        df_final = df.copy() 
+        for column in self.PASS_TEST:
+            if column not in ["collinearity_var2","collinearity_var1"]:
+                df_final = df_final[(df_final[column]=="True") | (df_final[column]==True)]
+                print(df_final.shape)
+            else:
+                df_final = df_final[df_final[column]<5]
+        return df_final
         
     def apply_model(self,df,max_iters,use_file_criteria=False,data_type="full"):
         if use_file_criteria:
@@ -244,6 +282,16 @@ class Modelado(Portafolio):
         # Causality test
         causality = self.apply_test_causality()
         test_results = pd.concat([test_results,causality], axis='columns')
+
+        # Durbin Watson
+        dwatson_test = self.apply_durbin_watson()
+        test_results = pd.concat([test_results,dwatson_test], axis='columns')
+
+        # Cointegration
+        Cointegration = test_results.apply(lambda x: self.apply_cointegrations_test(x.var1, x.var2, x.maxlags), axis = 'columns')
+        Cointegration = pd.DataFrame(list(Cointegration), columns = ["pvalue_coint","cointegration"])
+        
+        test_results = pd.concat([test_results,Cointegration],axis="columns")
 
         return test_results
                                 

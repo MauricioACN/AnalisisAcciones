@@ -20,6 +20,7 @@ class Portafolio:
 
     INDICES = ["76_CHL_IGPA_INDICE","77_COL_COLCAP_INDICE","78_MEX_IPC_INDICE","79_PER_LIMA GENER_INDICE"]
     PERIODO = ["PERIODO"]
+    PASS_TEST = ["normality","stability","causality","no_correlation_var1","no_correlation_var2","collinearity_var1","collinearity_var2"]
 
     def __init__(self,df):
         self.df = df
