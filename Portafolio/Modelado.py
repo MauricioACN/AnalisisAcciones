@@ -14,13 +14,17 @@ from statsmodels.tsa.api import VAR
 # test durbin watson
 from statsmodels.stats.stattools import durbin_watson
 
+# test het_white
+from statsmodels.stats.diagnostic import het_white 
+from statsmodels.compat import lzip
+from patsy import dmatrices
+
 class Modelado(Portafolio):
     
     def adfuller_test_results(self,b):
         # pruebas de estacionarieidad para todas las series
         results_adftest = {}
         for column in b.columns.tolist():
-            print(column)
             adf = adfuller(b[column])
             results_adftest[column] = adf[1]
 
@@ -39,12 +43,6 @@ class Modelado(Portafolio):
                                 'fpe': result.fpe,
                                 'hqic':result.hqic}
         
-        # list_AIC = self.iter_var("AIC",max_iters,models_results_by_lags)
-        # list_BIC = self.iter_var("BIC",max_iters,models_results_by_lags)
-        # list_FPE = self.iter_var("FPE",max_iters,models_results_by_lags)
-        # list_HQIC = self.iter_var("HQIC",max_iters,models_results_by_lags)
-
-        # return (list_AIC,list_BIC,list_FPE,list_HQIC)
         return models_results_by_lags
 
     def durbin_watson_test(self, results):
@@ -76,16 +74,24 @@ class Modelado(Portafolio):
     def cointegration_test(self,y0,y1,maxlags = 1, trend="c"):
 
         out = coint(y0, y1, maxlag = maxlags, trend = trend)
-        pvalue_coint = out[1]
-        cointegration = pvalue_coint<0.05
+        pvalue_coint = out[1] # valor p psotion 
+        t_stadistic = out[0] # t statistic
+        criteria_info_5 = out[2][1]
+        cointegration = t_stadistic<criteria_info_5
 
-        return pvalue_coint,cointegration
+        return pvalue_coint,t_stadistic,criteria_info_5,cointegration
 
-    def cointegration_johansen_test(self,df,det_order,k_ar_diff):
-
+    def cointegration_johansen_test(self, var1, var2, k_ar_diff):
+        
+        det_order = 0
+        df = self.df_transform[[var1,var2]]
         test = coint_johansen(df,det_order,k_ar_diff)
 
-        return test
+        eigenvalue = test.lr2[0]
+        critical_values_eigen_95 = test.cvm[0][1]
+        cointegration_joha = eigenvalue > critical_values_eigen_95
+
+        return eigenvalue, critical_values_eigen_95, cointegration_joha
 
     def apply_cointegrations_test(self,var1,var2,maxlags):
         
@@ -103,7 +109,6 @@ class Modelado(Portafolio):
     def iter_var(self,criterio,max_lag,models_results_by_lags):
         salida = [models_results_by_lags[id][criterio] for id in np.arange(1,max_lag)]
         max_lag = salida.index(min(salida))+1
-        print(f"{criterio}: ",max_lag)
         return max_lag
     
     def filter_data(self,df):
@@ -112,7 +117,6 @@ class Modelado(Portafolio):
         for column in self.PASS_TEST:
             if column not in ["collinearity_var2","collinearity_var1"]:
                 df_final = df_final[(df_final[column]=="True") | (df_final[column]==True)]
-                print(df_final.shape)
             else:
                 df_final = df_final[df_final[column]<5]
         return df_final
@@ -125,16 +129,11 @@ class Modelado(Portafolio):
 
         else:
             model = [self.var_model_results(df[list(column)],max_iters) for column in self.ids_filters]
-            print("termine modelos")
             new_df = pd.DataFrame(self.ids_filters,columns=["var1","var2"])
             new_df["aic"] = [self.iter_var("aic",max_iters,model_iter) for model_iter in model]
-            print("termine AIC")
             new_df["bic"] = [self.iter_var("bic",max_iters,model_iter) for model_iter in model]
-            print("termine BIC")
             new_df["fpe"] = [self.iter_var("fpe",max_iters,model_iter) for model_iter in model]
-            print("termine FPE")
             new_df["hqic"] = [self.iter_var("hqic",max_iters,model_iter) for model_iter in model]
-            print("termine HQIC")
 
             # Escritura de archivo
             new_df.to_csv(f"{data_type}_modelos_info_criteria.csv",index=False)
@@ -220,8 +219,6 @@ class Modelado(Portafolio):
             results.append(salida)
 
         results = pd.DataFrame(results,columns=["collinearity_var1","collinearity_var2"])
-        print(results.shape)
-        print(results.isna().sum())
         df = pd.concat([df,results],axis='columns')
         return df
 
@@ -261,14 +258,54 @@ class Modelado(Portafolio):
         df = pd.concat([df,new_df], axis='columns')
 
         return df
+    
+    def het_white_test(self, index):
 
-    def apply_final_model(self,df,df_transform):
+        a = self.lista_results[index]
+        mode = self.modelos_lista[index]
+
+        print(mode.endog_names)
+        print(self.df_transform.columns)
+        endog = self.df_transform[mode.endog_names]
+        endog = endog.filter(items = a.resid.index, axis=0)
+        endog.columns = ["var1","var2"]
+
+        expr = 'var1~ var2'
+        y, X = dmatrices(expr, endog, return_type='dataframe')
+        try:
+            results = het_white(a.resid.iloc[:,0], X)
+        except:
+            results = ("Error",)*4
+
+        return results
+
+
+    def apply_final_model(self,df,df_transform, lag_model=False):
 
         self.modelito(df,df_transform)
 
         # Select best criteria results
         best_model_df = self.apply_best_criteria(df)
 
+        if lag_model:
+            filtro_colums = pd.read_excel("../Datos/SubFiltro.xlsx",sheet_name=0)
+
+            if self.type_transform=="returns":
+                filtro_colums["var1"] = "returns_"+filtro_colums["var1"]
+                filtro_colums["var2"] = "returns_"+filtro_colums["var2"]
+
+            elif self.type_transform=="diff":
+                filtro_colums["var1"] = "diff_"+filtro_colums["var1"]
+                filtro_colums["var2"] = "diff_"+filtro_colums["var2"]
+
+            best_model_df = best_model_df.merge(filtro_colums, on = ["var1","var2"], how = "inner")
+
+            best_model_df["maxlags_2"] = np.where(best_model_df["maxlags"]==best_model_df["Lags"], best_model_df["maxlags"],
+                                                np.where(best_model_df["Lags"].isna(), best_model_df["maxlags"], best_model_df["Lags"]))
+            
+            best_model_df.drop(["maxlags","Lags","corr"], axis = 1, inplace = True)
+            best_model_df.rename(columns={"maxlags_2":"maxlags"}, inplace = True)
+        
         # Select best criteria results
         test_results = self.row_name(best_model_df)
 
@@ -287,11 +324,23 @@ class Modelado(Portafolio):
         dwatson_test = self.apply_durbin_watson()
         test_results = pd.concat([test_results,dwatson_test], axis='columns')
 
-        # Cointegration
-        Cointegration = test_results.apply(lambda x: self.apply_cointegrations_test(x.var1, x.var2, x.maxlags), axis = 'columns')
-        Cointegration = pd.DataFrame(list(Cointegration), columns = ["pvalue_coint","cointegration"])
+        # # Cointegration
+        # Cointegration = test_results.apply(lambda x: self.apply_cointegrations_test(x.var1, x.var2, x.maxlags), axis = 'columns')
+        # Cointegration = pd.DataFrame(list(Cointegration), columns = ["pvalue_coint","t_stadistic","criteria_info_5","cointegration"])
         
-        test_results = pd.concat([test_results,Cointegration],axis="columns")
+        # test_results = pd.concat([test_results,Cointegration],axis="columns")
+
+
+        # heterocedasticity
+        het_wthite_df = test_results.apply(lambda x: self.het_white_test(x.index_row), axis = 'columns')
+        het_wthite_df = pd.DataFrame(list(het_wthite_df), columns = ['H_LM_statistic', 'H_LM_test_p_value:', 'H_F_statistic', 'H_F-test_p_value'])
+        test_results = pd.concat([test_results,het_wthite_df],axis="columns")
+
+
+        # Cointegration Johansen
+        johansen = test_results.apply(lambda x: self.cointegration_johansen_test(var1 = x.var1, var2 = x.var2, k_ar_diff = x.maxlags), axis = 'columns')
+        johansen_df = pd.DataFrame(list(johansen), columns = ["eigenvalue", "critical_values_eigen_95", "cointegration_joha"])
+        test_results = pd.concat([test_results,johansen_df],axis="columns")
 
         return test_results
-                                
+                              

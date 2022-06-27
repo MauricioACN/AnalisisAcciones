@@ -18,20 +18,20 @@ from statsmodels.stats.stattools import durbin_watson
 
 class Portafolio:
 
-    INDICES = ["76_CHL_IGPA_INDICE","77_COL_COLCAP_INDICE","78_MEX_IPC_INDICE","79_PER_LIMA GENER_INDICE"]
+    # INDICES = ["76_CHL_IGPA_INDICE","77_COL_COLCAP_INDICE","78_MEX_IPC_INDICE","79_PER_LIMA GENER_INDICE"]
     PERIODO = ["PERIODO"]
-    PASS_TEST = ["normality","stability","causality","no_correlation_var1","no_correlation_var2","collinearity_var1","collinearity_var2"]
+    PASS_TEST = ["cointegration","normality","stability","causality","no_correlation_var1","no_correlation_var2","collinearity_var1","collinearity_var2"]
 
     def __init__(self,df):
         self.df = df
         self.tickers_info_full = self.df.columns.to_list()
         self.tickers_info_full.remove("PERIODO")
-        [self.tickers_info_full.remove(indice) for indice in Portafolio.INDICES]
+        # [self.tickers_info_full.remove(indice) for indice in Portafolio.INDICES]
         self.df_final = self.df[self.tickers_info_full]
         self.test = 'ssr_chi2test'
         self.inside = False
         self.lista_results = {}
-    
+            
     def create_df_tickers(self,list_tickers,inside=False):
         tickers_info_df = pd.DataFrame(list_tickers, columns = ["column_id"])
         if inside:
@@ -60,6 +60,7 @@ class Portafolio:
 
         ids_filters = [id for id in ids if ids[id] == 0]
         self.ids_filters = ids_filters
+        # print(len(self.ids_filters))
         
     def analysis_df(self,par_var):
         lista = Portafolio.PERIODO.copy()
@@ -69,7 +70,7 @@ class Portafolio:
         new_df = new_df.set_index("PERIODO")
         return new_df
 
-    def transform_df(self,df,type_transform=None,remove_na=None):
+    def transform_df(self,df,type_transform=None,remove_na=None, inside=True):
         
         df_edit = df.copy()
         new_columns_org = df_edit.columns.tolist()
@@ -85,20 +86,21 @@ class Portafolio:
 
             for column in new_columns:
                 df_edit[column] = df_edit[column.replace("diff_","")].diff()
+        
 
-        if type_transform:
+        if type_transform!="prices":
             df_edit.drop(new_columns_org,axis=1,inplace=True)
         
         # calidad de la salida
-        print("Nas:",df_edit.isna().sum())
+        # print("Nas:",df_edit.isna().sum())
 
         if remove_na:
             df_edit.dropna(inplace=True,axis=0)
             print("Correccion")
-            print("Nas:",df_edit.isna().sum())
+            # print("Nas:",df_edit.isna().sum())
 
-        self.inside = True
-        self.apply_all(inside=True,df=df_edit.columns.tolist())
+        if inside:
+            self.apply_all(inside=True,df=df_edit.columns.tolist())
         
         return df_edit
          
